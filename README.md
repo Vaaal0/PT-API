@@ -1,6 +1,7 @@
 # PT-API
 
 IA que utiliza la API 1.5 Flash de Gemini, con una interfaz en HTML como frontend y Python como backend.
+FUnciona de manera local con acceso a Internet
 
 ---
 ## API
