@@ -8,9 +8,10 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
   <head>
-  <link rel="stylesheet" href="styles/style.css">
-</head>
+    <link rel="stylesheet" href="styles/style.css">
+  </head>
   <link
     href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,100..900;1,100..900&family=Bowlby+One&family=Kode+Mono:wght@400..700&family=Noto+Sans&display=swap"
     rel="stylesheet">
@@ -23,14 +24,27 @@
 
   <!-- Sección Superior Izquierda: Título "7403" y su línea -->
   <div class="top-left-header">
-    <h1>7403</h1>
+    <h1 id="titulo">7403</h1>
     <div class="title-underline"></div>
   </div>
 
   <!-- Sección Superior Derecha: Aquí va el estado -->
   <div class="top-right-status">
     <p id="estado">Comenzar</p>
+    <div id="loader-2" style="display:none;">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+
+    <div id="loader-hablando" class="hidden">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+
   </div>
+
+
+
   <div class="scene">
     <div class="wrapper">
       <div class="globe">
@@ -77,6 +91,11 @@
   <script>
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
+    const consoleOutput = document.getElementById("console-output");
+    const titulo = document.getElementById("titulo");
+    const globe = document.querySelector('.globe');
+    const loaderHablando = document.getElementById("loader-hablando");
+
 
     // Función para redimensionar el canvas y asegurar que el visualizador funcione correctamente
     function resizeCanvas() {
@@ -95,12 +114,13 @@
     let recognition;
     let isListening = false;
     let initialized = false;
+    let listenTimeout; // temporizador global
     const WAKE_WORD = "robot";
     let processingResponse = false;
+    let colorBarras = "lime"//color inicial
 
     // Referencia al elemento de salida de la consola
     const consoleOutputEl = document.getElementById("console-output");
-
     // Inicializa el texto de la consola al cargar la página
     consoleOutputEl.textContent = "Consola de Python esperando por información.\n";
 
@@ -111,28 +131,41 @@
         recognition.lang = 'es-ES'; // Idioma español
         recognition.interimResults = false; // Solo resultados finales
         recognition.maxAlternatives = 1; // Solo la mejor alternativa
-        //recognition.continuous = true; // Solo la mejor alternativa
+        // recognition.continuous = true;
+
         recognition.onstart = () => {
           console.log("onstart!!!!!!!!!")
           isListening = true;
-          document.getElementById("estado").textContent = "Llámame por mi nombre 'robot'";
+          mostrarEstado("Llámame 'robot'");
+
           // document.getElementById("respuesta").textContent = ""; // COM-01: Eliminado/comentado para mantener la respuesta anterior
         };
 
+        //Iniciar temporizador para detener reconocimiento después de 5 segundos
+        // listenTimeout = setTimeout(() => {
+        //   recognition.stop(); // Detener después de 5 segundos
+        //   console.log("⏱ Reconocimiento detenido por timeout");
+        // }, 5000);
+
         recognition.onresult = (event) => {
+          clearTimeout(listenTimeout);
           const transcript = event.results[0][0].transcript.toLowerCase().trim();
-          document.getElementById("estado").textContent = `Escuchaste: "${transcript}"`;
+          console.log("Transcripción:", transcript);
 
           if (transcript.includes(WAKE_WORD)) {
             const command = transcript.replace(WAKE_WORD, '').trim();
-            document.getElementById("estado").textContent = `¡Activado! Enviando: "${command}"`;
+            mostrarEstado(`¡Activado! Enviando: "${command}"`);
             recognition.stop(); // Detener el reconocimiento para procesar
             isListening = false;
             enviarMensaje(command);
           } else {
-            document.getElementById("estado").textContent = "Esperando escuchar palabra de activación...";
+            mostrarEstado(`Escuchaste: "${transcript}"`);
+            setTimeout(() => {
+              if (!processingResponse) mostrarEstado("Llámame 'robot'");
+            }, 2000); // Cambia este valor si quieres más tiempo de lectura
           }
         };
+
         recognition.onerror = (event) => {
           console.error("Error en SpeechRecognition:", event.error);
           document.getElementById("estado").textContent = `Error: ${event.error}. Reiniciando...`;
@@ -213,7 +246,7 @@
       let x = 0;
       for (let i = 0; i < freqs.length; i++) {
         const barHeight = freqs[i]; // Altura de la barra basada en la frecuencia
-        ctx.fillStyle = "lime"; // Color de las barras (verde neón)
+        ctx.fillStyle = colorBarras; // Color de las barras (verde neón)
         ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight); // Dibujar la barra
         x += barWidth + 1; // Mover a la siguiente posición
       }
@@ -224,6 +257,7 @@
       processingResponse = true; // Indica que se está procesando una respuesta
       const audioEl = document.getElementById("audio");
       const respuestaEl = document.getElementById("respuesta");
+      const consoleOutputEl = document.getElementById("console-output");
 
       // Añadir un separador y el mensaje de carga a la consola
       consoleOutputEl.textContent += `\n--- Solicitud [${new Date().toLocaleTimeString()}] ---\n`;
@@ -232,7 +266,9 @@
 
       audioEl.src = ""; // Limpiar el audio anterior
       respuestaEl.textContent = "Procesando respuesta..."; // Esta línea se ejecutará al recibir una nueva solicitud y sobrescribirá la respuesta anterior
-      document.getElementById("estado").textContent = "Pensando...";
+      //loader
+      mostrarLoader();
+
 
       try {
         // Aquí se realiza la llamada al backend. Asegúrate de que tu servidor Python esté corriendo.
@@ -244,7 +280,7 @@
 
         const data = await res.json();
         console.log("Respuesta del backend:", data);
-        respuestaEl.textContent = data.respuesta || "Sin respuesta textual del asistente.";
+        respuestaEl.textContent = data.respuesta || "No escuché";
 
         // Si el backend envía un campo 'console_output', lo mostramos
         if (data.console_output) {
@@ -256,22 +292,47 @@
 
         if (data.audio_url) {
           audioEl.src = `http://127.0.0.1:5000${data.audio_url}`;
+          document.getElementById("loader-2").style.display = "none";
+
           audioEl.play();
-          document.getElementById("estado").textContent = "Escúchame";
-          // Cuando el audio termina, reiniciar el reconocimiento
+          fondoCanvas = "#000";
+          colorBarras = "#00f4ff";
+          titulo.classList.add("hablando-texto");
+          globe.classList.add('hablando-color');
+          consoleOutputEl.classList.add("hablando"); //  Activar efecto visual en consola
+          consoleOutputEl.style.color = "#33f6ff"; // directamente en JS
+          loaderHablando.classList.remove("hidden");
+          loaderHablando.style.display = "flex";
+
+
           audioEl.onended = () => {
             console.log("Audio de respuesta finalizado.");
+            colorBarras = "lime";
+            consoleOutputEl.classList.remove("hablando"); // Quitar efecto
+            titulo.classList.remove("hablando-texto");
+            consoleOutputEl.style.color = "#0f0";
+            globe.classList.remove('hablando-color');
+            document.getElementById("loader-hablando").style.display = "none";
+
+            loaderHablando.classList.add("hidden");
+            loaderHablando.style.display = "none";
+            // Ocultar loader y mostrar texto cuando termina
+            mostrarEstado("Escúchame");
+
+
             processingResponse = false;
             startRecognition();
           };
-        } else {
+        }
+        else {
           processingResponse = false;
           startRecognition(); // Reiniciar el reconocimiento si no hay audio
         }
       } catch (err) {
         console.error("Error al comunicarse con el backend:", err);
         respuestaEl.textContent = `Ocurrió un error: ${err.message}`;
-        document.getElementById("estado").textContent = "Error de comunicación.";
+        mostrarEstado("Error de comunicación.");
+
         consoleOutputEl.textContent += `Error de conexión: ${err.message}\n`; // Mostrar error en la consola también
         consoleOutputEl.scrollTop = consoleOutputEl.scrollHeight; // Desplazar al final
         processingResponse = false;
@@ -292,6 +353,22 @@
         }
       }
     });
+
+    function mostrarLoader() {
+      const estado = document.getElementById("estado");
+      const loader = document.getElementById("loader-2");
+      estado.style.display = "none";
+      loader.style.display = "grid";
+    }
+
+    function mostrarEstado(texto) {
+      const estado = document.getElementById("estado");
+      const loader = document.getElementById("loader-2");
+      loader.style.display = "none";
+      estado.style.display = "block";
+      estado.textContent = texto;
+    }
+
   </script>
 </body>
 
