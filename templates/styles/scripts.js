@@ -24,9 +24,11 @@ let recognition;
 let isListening = false;
 let initialized = false;
 let listenTimeout; // temporizador global
-const WAKE_WORD = "robot";
+const WAKE_WORD = "7403";
 let processingResponse = false;
 let colorBarras = "lime"//color inicial
+let sessionId = null;
+
 
 // Referencia al elemento de salida de la consola
 const consoleOutputEl = document.getElementById("console-output");
@@ -35,71 +37,123 @@ consoleOutputEl.textContent = "Consola de Python esperando por información.\n";
 
 // Función para iniciar el reconocimiento de voz
 function startRecognition() {
-    if (!recognition) {
-        recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = 'es-ES'; // Idioma español
-        recognition.interimResults = false; // Solo resultados finales
-        recognition.maxAlternatives = 1; // Solo la mejor alternativa
-        // recognition.continuous = true;
-
-        recognition.onstart = () => {
-            console.log("onstart!!!!!!!!!")
-            isListening = true;
-            mostrarEstado("Llámame 'robot'");
-
-            // document.getElementById("respuesta").textContent = ""; // COM-01: Eliminado/comentado para mantener la respuesta anterior
-        };
-
-        //Iniciar temporizador para detener reconocimiento después de 5 segundos
-        // listenTimeout = setTimeout(() => {
-        //   recognition.stop(); // Detener después de 5 segundos
-        //   console.log("⏱ Reconocimiento detenido por timeout");
-        // }, 5000);
-
-        recognition.onresult = (event) => {
-            clearTimeout(listenTimeout);
-            const transcript = event.results[0][0].transcript.toLowerCase().trim();
-            console.log("Transcripción:", transcript);
-
-            if (transcript.includes(WAKE_WORD)) {
-                const command = transcript.replace(WAKE_WORD, '').trim();
-                mostrarEstado(`¡Activado! Enviando: "${command}"`);
-                recognition.stop(); // Detener el reconocimiento para procesar
-                isListening = false;
-                enviarMensaje(command);
-            } else {
-                mostrarEstado(`Escuchaste: "${transcript}"`);
-                setTimeout(() => {
-                    if (!processingResponse) mostrarEstado("Llámame 'robot'");
-                }, 2000); // Cambia este valor si quieres más tiempo de lectura
-            }
-        };
-
-        recognition.onerror = (event) => {
-            console.error("Error en SpeechRecognition:", event.error);
-            document.getElementById("estado").textContent = `Error: ${event.error}. Reiniciando...`;
-            isListening = false;
-            setTimeout(startRecognition, 5000); // Intentar reiniciar después de 1 segundo
-        };
-
-        recognition.onend = () => {
-            console.log("onend!!!!!!!!!!")
-            isListening = false;
-            // Reiniciar el reconocimiento solo si no estamos procesando una respuesta
-            if (!processingResponse) startRecognition();
-        };
+    // Si ya existe una instancia, nos aseguramos de que esté detenida antes de crear una nueva.
+    if (recognition) {
+        recognition.stop();
+        recognition = null;
     }
 
-    // Iniciar el reconocimiento si no está escuchando
+    // Declaraciones de estado para esta sesión de escucha
+    let wakeWordDetected = false;
+    let commandTimeout;
+    let fullTranscript = ""; // Almacenará la transcripción completa de esta sesión
+
+    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'es-ES';
+    recognition.continuous = true;  // Fundamental para escucha continua
+    recognition.interimResults = true; // Nos da resultados mientras hablamos
+
+    recognition.onstart = () => {
+        console.log("✅ Reconocimiento iniciado. Escuchando palabra de activación...");
+        isListening = true;
+        // Solo muestra "Escuchando..." si no estamos ya activados
+        if (!wakeWordDetected) {
+            mostrarEstado("Llámame '7403', te escucho, soy yo");
+
+        }
+    };
+
+    recognition.onresult = (event) => {
+        let interimTranscript = '';
+        // Construimos la transcripción completa a partir de todos los resultados
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            interimTranscript += event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                if (wakeWordDetected) {
+                    fullTranscript += event.results[i][0].transcript.toLowerCase().trim() + ' ';
+                }
+            }
+
+        }
+
+        // 1. Detectar la palabra de activación
+        if (!wakeWordDetected && interimTranscript.toLowerCase().includes(WAKE_WORD.toLowerCase())) {
+            console.log("🔑 Palabra de activación detectada!");
+            wakeWordDetected = true;
+            mostrarEstado("¡Activado! Te escucho...");
+            colorBarras = "white"; // Barras del canvas
+            titulo.classList.add("activado-texto");
+            globe.classList.add("activado-color");
+            consoleOutput.classList.add("activado");
+            consoleOutputEl.style.color = "white";
+            // Limpiamos la transcripción para que la palabra de activación no sea parte del comando
+            fullTranscript = "";
+        }
+
+        // 2. Si ya estamos activados, reiniciar el temporizador de silencio
+        if (wakeWordDetected) {
+            clearTimeout(commandTimeout);
+            commandTimeout = setTimeout(() => {
+                console.log("⏱️ Silencio detectado. Procesando comando.");
+                recognition.stop(); // Detenemos para procesar
+            }, 2000); // 2 segundos de silencio es un buen punto de partida
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error("❌ Error en SpeechRecognition:", event.error);
+        isListening = false;
+        // El error 'no-speech' es normal, el 'onend' se encargará de reiniciar.
+        // Para otros errores, mostramos un mensaje.
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            mostrarEstado(`Error: ${event.error}`);
+        }
+    };
+
+    recognition.onend = () => {
+        colorBarras = "lime";
+        titulo.classList.remove("activado-texto");
+        globe.classList.remove("activado-color");
+        consoleOutput.classList.remove("activado");
+        consoleOutputEl.style.color = "#0f0";
+
+        console.log("🛑 Reconocimiento detenido.");
+        isListening = false;
+        clearTimeout(commandTimeout);
+
+        // Si la palabra clave fue detectada, procesamos el comando.
+        if (wakeWordDetected) {
+            const command = fullTranscript.trim();
+
+            if (command) {
+                mostrarEstado(`Enviando: "${command}"`);
+                enviarMensaje(command);
+                // NO reiniciamos aquí. `enviarMensaje` lo hará cuando termine.
+            } else {
+                mostrarEstado("No te escuché. Vuelvo a escuchar...");
+                // Reinicia para volver a escuchar si no hubo comando
+                setTimeout(() => startRecognition(), 500);
+            }
+        } else {
+            // Si el reconocimiento terminó SIN la palabra clave (ej. por 'no-speech' o un error silencioso)
+            // y no estamos esperando una respuesta del servidor, reiniciamos.
+            if (!processingResponse) {
+                console.log("Reiniciando escucha automáticamente.");
+                setTimeout(() => startRecognition(), 250); // Un breve respiro antes de reiniciar
+            }
+        }
+    };
+
+    // Iniciar el reconocimiento
     if (!isListening) {
         try {
             recognition.start();
         } catch (e) {
-            console.warn("SpeechRecognition ya estaba activo:", e);
-            isListening = true; // Asegurarse de que el estado esté correcto
+            console.error("No se pudo iniciar el reconocimiento:", e);
         }
     }
 }
+
 
 // Función para inicializar el sistema (micrófono y visualizador)
 async function iniciarConversacion() {
@@ -174,7 +228,7 @@ async function enviarMensaje(message) {
     consoleOutputEl.scrollTop = consoleOutputEl.scrollHeight; // Desplazar al final
 
     audioEl.src = ""; // Limpiar el audio anterior
-    respuestaEl.textContent = "Procesando respuesta..."; // Esta línea se ejecutará al recibir una nueva solicitud y sobrescribirá la respuesta anterior
+    respuestaEl.textContent = "Pensando..."; // Esta línea se ejecutará al recibir una nueva solicitud y sobrescribirá la respuesta anterior
     //loader
     mostrarLoader();
 
@@ -184,10 +238,19 @@ async function enviarMensaje(message) {
         const res = await fetch('http://127.0.0.1:5000/api/robot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mensaje: message })
+            body: JSON.stringify({
+                mensaje: message,
+                session_id: sessionId // 👈 agrega esto
+            })
+
         });
 
         const data = await res.json();
+        if (!sessionId && data.session_id) {
+            sessionId = data.session_id;
+            console.log("🧠 Nueva sesión iniciada:", sessionId);
+        }
+
         console.log("Respuesta del backend:", data);
         respuestaEl.textContent = data.respuesta || "No escuché";
 
